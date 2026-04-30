@@ -253,6 +253,41 @@ input[type=number] { -moz-appearance: textfield; }
     <div id="hist-content"></div>
   </div>
 
+  <!-- SETTINGS VIEW -->
+  <div id="view-settings" style="display:none;">
+    <div style="display:flex;flex-direction:column;gap:12px;">
+
+      <div class="cardio-log-card">
+        <div class="cardio-log-head"><span>Backup &amp; restore</span></div>
+        <div style="padding:14px;display:flex;flex-direction:column;gap:10px;">
+          <div style="font-size:13px;color:#666;line-height:1.6;">Export saves all your workout and cardio history to a file on your phone. Import restores it — use this after clearing your cache or switching devices.</div>
+          <button class="btn-save" onclick="exportData()">Export my data</button>
+          <button class="btn-reset" onclick="document.getElementById('import-file').click()">Import from file</button>
+        </div>
+      </div>
+
+      <div class="cardio-log-card">
+        <div class="cardio-log-head"><span>App info</span></div>
+        <div style="padding:14px;display:flex;flex-direction:column;gap:8px;">
+          <div style="display:flex;justify-content:space-between;font-size:13px;padding:5px 0;border-bottom:1px solid #f5f5f5;">
+            <span style="color:#666;">Version</span><span style="font-weight:600;">2.0</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;padding:5px 0;border-bottom:1px solid #f5f5f5;">
+            <span style="color:#666;">Weight sessions</span><span style="font-weight:600;" id="info-weight-count">—</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;padding:5px 0;border-bottom:1px solid #f5f5f5;">
+            <span style="color:#666;">Cardio sessions</span><span style="font-weight:600;" id="info-cardio-count">—</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;padding:5px 0;">
+            <span style="color:#666;">Total cardio minutes</span><span style="font-weight:600;" id="info-cardio-mins">—</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="height:8px;"></div>
+    </div>
+  </div>
+
 </div>
 
 <div class="bottom-nav">
@@ -268,7 +303,14 @@ input[type=number] { -moz-appearance: textfield; }
     <svg class="bnav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
     History
   </button>
+  <button class="bnav-btn" id="bnav-settings" onclick="showView('settings')">
+    <svg class="bnav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    Settings
+  </button>
 </div>
+
+<!-- hidden file input for import -->
+<input type="file" id="import-file" accept=".json" style="display:none;" onchange="importData(event)">
 
 <script>
 if ('serviceWorker' in navigator) { navigator.serviceWorker.register('./sw.js').catch(()=>{}); }
@@ -548,14 +590,16 @@ function saveCardio() {
 // HISTORY
 function showView(v) {
   currentView = v;
-  ['log','cardio','history'].forEach(name => {
-    document.getElementById('view-'+name).style.display = name===v ? 'block' : 'none';
+  ['log','cardio','history','settings'].forEach(name => {
+    const el = document.getElementById('view-'+name);
+    if (el) el.style.display = name===v ? 'block' : 'none';
     const btn = document.getElementById('bnav-'+name);
     if (btn) btn.classList.toggle('active', name===v);
   });
   if (v==='log') { document.getElementById('topbar-title').textContent = PROG[activeDay].title; document.getElementById('topbar-sub').textContent = PROG[activeDay].focus; }
   else if (v==='cardio') renderCardioView();
   else if (v==='history') { document.getElementById('topbar-title').textContent = 'History'; document.getElementById('topbar-sub').textContent = 'All sessions'; renderHistory(); }
+  else if (v==='settings') { document.getElementById('topbar-title').textContent = 'Settings'; document.getElementById('topbar-sub').textContent = 'Backup & app info'; renderSettings(); }
   document.getElementById('scroll-area').scrollTop = 0;
 }
 
@@ -753,6 +797,54 @@ function fmtDate(iso) {
   const d = new Date(iso);
   if (isNaN(d)) return iso;
   return d.toLocaleDateString('en-US', {weekday:'short', month:'short', day:'numeric', year:'numeric'});
+}
+
+
+function renderSettings() {
+  document.getElementById('info-weight-count').textContent = loadHist().length;
+  const cardio = loadCardio();
+  document.getElementById('info-cardio-count').textContent = cardio.length;
+  document.getElementById('info-cardio-mins').textContent = cardio.reduce((a,s)=>a+parseInt(s.duration||0),0) + ' min';
+}
+
+function exportData() {
+  const data = {
+    exportDate: new Date().toISOString(),
+    version: 2,
+    weightHistory: loadHist(),
+    cardioHistory: loadCardio(),
+    cardioTypes: loadTypes()
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `workout-backup-${new Date().toISOString().split('T')[0]}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function importData(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(ev) {
+    try {
+      const data = JSON.parse(ev.target.result);
+      if (!data.weightHistory && !data.cardioHistory) { alert('Invalid backup file.'); return; }
+      const dateStr = data.exportDate ? new Date(data.exportDate).toLocaleDateString() : 'unknown date';
+      if (!confirm(`Replace current data with backup from ${dateStr}?`)) return;
+      if (data.weightHistory) saveHist(data.weightHistory);
+      if (data.cardioHistory) saveCardio2(data.cardioHistory);
+      if (data.cardioTypes) saveTypes(data.cardioTypes);
+      alert('Data restored successfully!');
+      renderSettings();
+    } catch(err) {
+      alert('Could not read file. Make sure it is a valid backup.');
+    }
+  };
+  reader.readAsText(file);
+  e.target.value = '';
 }
 
 renderTabs(); renderStats(); renderDay();
