@@ -403,7 +403,17 @@ let activeDay=0, histFilter='weekly', currentView='log', selectedIntensity='mode
 // Set default date to today
 function todayStr() {
   const d = new Date();
-  return d.toISOString().split('T')[0];
+  const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), dd = String(d.getDate()).padStart(2,'0');
+  return y+'-'+m+'-'+dd;
+}
+function parseLocalDate(str) {
+  if (!str) return new Date(NaN);
+  const s = String(str).substring(0,10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    const [y,m,d] = s.split('-').map(Number);
+    return new Date(y, m-1, d);
+  }
+  return new Date(str);
 }
 
 function getLastSession(di) {
@@ -419,6 +429,9 @@ function renderTabs() {
     `<button class="day-tab${i===activeDay?' active':''}" onclick="selectDay(${i})">${d.day}<span class="day-tab-sub">${d.focus.split(',')[0]}</span></button>`
   ).join('');
 }
+
+function getScrollPos() { return document.getElementById('scroll-area').scrollTop; }
+function restoreScrollPos(pos) { document.getElementById('scroll-area').scrollTop = pos; }
 
 function renderStats() {
   const total=totalSets(activeDay), done=doneSets(activeDay), pct=total?Math.round((done/total)*100):0;
@@ -457,18 +470,41 @@ function renderDay() {
     html += `</div>`;
   });
   document.getElementById('day-content').innerHTML = html;
-  document.getElementById('scroll-area').scrollTop = 0;
 }
 
-function selectDay(i) { activeDay=i; renderTabs(); renderStats(); renderDay(); }
-function sv(di,ei,si,f,v) { state[di][ei][si][f]=v; }
-function td(di,ei,si) { state[di][ei][si].done=!state[di][ei][si].done; renderStats(); renderDay(); }
+const SK_DRAFT = 'wt_draft_v1';
+function saveDraft() {
+  try { localStorage.setItem(SK_DRAFT, JSON.stringify({ activeDay, state })); } catch(e) {}
+}
+function loadDraft() {
+  try {
+    const d = JSON.parse(localStorage.getItem(SK_DRAFT));
+    if (!d) return;
+    if (typeof d.activeDay === 'number') activeDay = d.activeDay;
+    if (d.state) {
+      Object.keys(d.state).forEach(di => {
+        if (!state[di]) return;
+        Object.keys(d.state[di]).forEach(ei => {
+          if (!state[di][ei]) return;
+          Object.keys(d.state[di][ei]).forEach(si => {
+            if (state[di][ei][si] !== undefined) state[di][ei][si] = d.state[di][ei][si];
+          });
+        });
+      });
+    }
+  } catch(e) {}
+}
+
+function selectDay(i) { activeDay=i; saveDraft(); renderTabs(); renderStats(); renderDay(); document.getElementById('scroll-area').scrollTop=0; }
+function sv(di,ei,si,f,v) { state[di][ei][si][f]=v; saveDraft(); }
+function td(di,ei,si) { const sp=getScrollPos(); state[di][ei][si].done=!state[di][ei][si].done; saveDraft(); renderStats(); renderDay(); restoreScrollPos(sp); }
 
 function resetDay() {
   if (!confirm('Clear all inputs for this day?')) return;
   PROG[activeDay].exercises.forEach((ex,ei) => {
     for (let s=0; s<ex.sets; s++) state[activeDay][ei][s] = {weight:'',reps:'',done:false};
   });
+  saveDraft();
   renderStats(); renderDay();
 }
 
@@ -487,6 +523,7 @@ function saveSession() {
   const h = loadHist();
   h.push({ id:Date.now(), date:new Date().toISOString(), dayIndex:activeDay, dayTitle:PROG[activeDay].title, type:'weights', exercises:exData });
   saveHist(h);
+  localStorage.removeItem(SK_DRAFT);
   alert('Session saved!');
 }
 
@@ -513,7 +550,7 @@ function getWeekRange() {
 function getWeekSessions() {
   const {mon, sun} = getWeekRange();
   return loadCardio().filter(s => {
-    const d = new Date(s.date);
+    const d = parseLocalDate(s.date);
     return d >= mon && d <= sun;
   });
 }
@@ -606,7 +643,7 @@ function showView(v) {
 function setHistFilter(f) { histFilter=f; renderHistory(); }
 
 function getWeekKey(dateStr) {
-  const d = new Date(dateStr);
+  const d = parseLocalDate(dateStr);
   if (isNaN(d)) return null;
   const day = d.getDay();
   const mon = new Date(d);
@@ -616,7 +653,7 @@ function getWeekKey(dateStr) {
 }
 
 function fmtWeekRange(monStr) {
-  const mon = new Date(monStr);
+  const mon = parseLocalDate(monStr);
   const sun = new Date(mon); sun.setDate(mon.getDate()+6);
   const opts = {month:'short', day:'numeric'};
   return `${mon.toLocaleDateString('en-US',opts)} – ${sun.toLocaleDateString('en-US',opts)}`;
@@ -658,7 +695,7 @@ function renderHistory() {
 
   const weights = loadHist().map(s => ({...s, _type:'weights'}));
   const cardio = loadCardio().map(s => ({...s, _type:'cardio'}));
-  let all = [...weights, ...cardio].sort((a,b) => new Date(b.date)-new Date(a.date));
+  let all = [...weights, ...cardio].sort((a,b) => parseLocalDate(b.date)-parseLocalDate(a.date));
 
   if (histFilter === 'cardio') all = all.filter(s => s._type==='cardio');
   else if (typeof histFilter === 'number' && histFilter >= 0) all = all.filter(s => s._type==='weights' && s.dayIndex===histFilter);
@@ -794,6 +831,13 @@ function delWeight(id) {
 }
 
 function fmtDate(iso) {
+  if (!iso) return '';
+  const plainDate = String(iso).substring(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(plainDate)) {
+    const [y, m, d] = plainDate.split('-').map(Number);
+    const local = new Date(y, m - 1, d);
+    return local.toLocaleDateString('en-US', {weekday:'short', month:'short', day:'numeric', year:'numeric'});
+  }
   const d = new Date(iso);
   if (isNaN(d)) return iso;
   return d.toLocaleDateString('en-US', {weekday:'short', month:'short', day:'numeric', year:'numeric'});
@@ -847,6 +891,7 @@ function importData(e) {
   e.target.value = '';
 }
 
+loadDraft();
 renderTabs(); renderStats(); renderDay();
 </script>
 </body>
